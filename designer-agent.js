@@ -201,23 +201,34 @@ async function handleMessage(msg) {
   if (userContent.length === 0) return;
 
   history.push({ role: 'user', content: userContent });
+
+  // Immediate acknowledgement for voice/photo so user knows we got it
+  if (msg.voice || msg.audio) {
+    await bot.api.sendMessage(chatId, '🎤 מתמלל...').catch(() => {});
+  }
   await bot.api.sendChatAction(chatId, 'typing').catch(() => {});
 
   // ── Claude with retry + Haiku fallback (overload protection)
-  async function claudeCreate(params, retries = 4) {
+  async function claudeCreate(params, retries = 3) {
+    // Try Sonnet first with retries
     for (let i = 0; i < retries; i++) {
       try {
         return await client.messages.create(params);
       } catch (e) {
         const isOverload = e.status === 529 || e.status === 503 || e.status === 500;
         if (isOverload && i < retries - 1) {
-          await new Promise(r => setTimeout(r, (i + 1) * 10000)); // 10s, 20s, 30s
+          console.log(`Claude overloaded (attempt ${i+1}), retrying in ${(i+1)*5}s...`);
+          await new Promise(r => setTimeout(r, (i + 1) * 5000));
           continue;
         }
-        if (isOverload && params.model !== 'claude-haiku-4-5-20251001') {
-          // All Sonnet retries exhausted — fall back to Haiku
-          console.log('Sonnet overloaded, falling back to Haiku...');
-          return await client.messages.create({ ...params, model: 'claude-haiku-4-5-20251001' });
+        if (isOverload) {
+          // All retries exhausted — fall back to Haiku immediately
+          console.log('Sonnet exhausted, falling back to Haiku...');
+          try {
+            return await client.messages.create({ ...params, model: 'claude-haiku-4-5-20251001' });
+          } catch (e2) {
+            throw new Error(`Both Sonnet and Haiku overloaded. Try again in a minute.`);
+          }
         }
         throw e;
       }
@@ -338,7 +349,10 @@ async function handleMessage(msg) {
 
   } catch (e) {
     console.error('Handler error:', e.message);
-    await bot.api.sendMessage(chatId, 'אירעה שגיאה. נסה שוב עוד רגע.').catch(() => {});
+    const userMsg = e.message.includes('overloaded')
+      ? '⏳ השרת עמוס כרגע. נסה שוב בעוד דקה.'
+      : '⚠️ אירעה שגיאה. נסה שוב.';
+    await bot.api.sendMessage(chatId, userMsg).catch(() => {});
   }
 }
 
@@ -408,7 +422,10 @@ app.post('/webhook', (req, res) => {
   if (processedUpdates.has(update.update_id)) return;
   processedUpdates.add(update.update_id);
   if (processedUpdates.size > 1000) processedUpdates.delete(processedUpdates.values().next().value);
-  handleMessage(update.message).catch(console.error);
+  handleMessage(update.message).catch(async (e) => {
+    console.error('Unhandled error:', e.message);
+    await bot.api.sendMessage(update.message.chat.id, '⚠️ משהו השתבש. נסה שוב.').catch(() => {});
+  });
 });
 
 const PORT = process.env.PORT || 3000;
