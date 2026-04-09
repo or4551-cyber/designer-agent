@@ -201,15 +201,21 @@ async function handleMessage(msg) {
   history.push({ role: 'user', content: userContent });
   await bot.api.sendChatAction(chatId, 'typing').catch(() => {});
 
-  // ── Claude with retry (overload protection)
-  async function claudeCreate(params, retries = 5) {
+  // ── Claude with retry + Haiku fallback (overload protection)
+  async function claudeCreate(params, retries = 4) {
     for (let i = 0; i < retries; i++) {
       try {
         return await client.messages.create(params);
       } catch (e) {
-        if (i < retries - 1 && (e.status === 529 || e.status === 503 || e.status === 500)) {
-          await new Promise(r => setTimeout(r, (i + 1) * 8000));
+        const isOverload = e.status === 529 || e.status === 503 || e.status === 500;
+        if (isOverload && i < retries - 1) {
+          await new Promise(r => setTimeout(r, (i + 1) * 10000)); // 10s, 20s, 30s
           continue;
+        }
+        if (isOverload && params.model !== 'claude-haiku-4-5-20251001') {
+          // All Sonnet retries exhausted — fall back to Haiku
+          console.log('Sonnet overloaded, falling back to Haiku...');
+          return await client.messages.create({ ...params, model: 'claude-haiku-4-5-20251001' });
         }
         throw e;
       }
