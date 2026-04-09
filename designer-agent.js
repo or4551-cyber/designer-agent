@@ -125,9 +125,23 @@ async function handleMessage(msg) {
   // Typing indicator
   await bot.api.sendChatAction(chatId, 'typing').catch(() => {});
 
+  async function claudeCreate(params, retries = 3) {
+    for (let i = 0; i < retries; i++) {
+      try {
+        return await client.messages.create(params);
+      } catch (e) {
+        if (i < retries - 1 && (e.status === 529 || e.status === 503 || e.status === 529)) {
+          await new Promise(r => setTimeout(r, (i + 1) * 3000));
+          continue;
+        }
+        throw e;
+      }
+    }
+  }
+
   try {
     // ── Claude agentic loop ────────────────────────────────────────────────────
-    let response = await client.messages.create({
+    let response = await claudeCreate({
       model: 'claude-sonnet-4-6',
       max_tokens: 4096,
       system: SYSTEM_PROMPT,
@@ -188,7 +202,7 @@ async function handleMessage(msg) {
 
       history.push({ role: 'user', content: toolResults });
 
-      response = await client.messages.create({
+      response = await claudeCreate({
         model: 'claude-sonnet-4-6',
         max_tokens: 4096,
         system: SYSTEM_PROMPT,
