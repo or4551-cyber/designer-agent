@@ -376,6 +376,17 @@ setInterval(async () => {
         } else if (gen.state === 'failed') {
           failed = true;
         }
+      } else if (job.engine === 'fal_kling') {
+        // ── fal.ai Kling polling ──
+        const falRes = await fetch(`https://queue.fal.run/fal-ai/kling-video/v1.6/standard/text-to-video/requests/${task_id}`, {
+          headers: { Authorization: `Key ${process.env.FAL_API_KEY}` }
+        });
+        const falData = await falRes.json();
+        if (falData.status === 'COMPLETED' && falData.video?.url) {
+          videoUrl = falData.video.url;
+        } else if (falData.status === 'FAILED') {
+          failed = true;
+        }
       } else if (job.engine === 'replicate') {
         // ── Replicate polling ──
         const r = await fetch(`https://api.replicate.com/v1/predictions/${task_id}`, {
@@ -401,7 +412,8 @@ setInterval(async () => {
       }
 
       if (videoUrl) {
-        const engineLabel = job.engine === 'luma' ? 'Luma AI' : job.engine === 'replicate' ? 'Replicate' : 'Runway';
+        const engineLabels = { luma: 'Luma AI', replicate: 'Replicate', fal_kling: 'Kling AI', runway: 'Runway' };
+        const engineLabel = engineLabels[job.engine] || 'AI';
         try {
           await bot.api.sendDocument(job.chat_id, videoUrl, {
             caption: `🎬 הוידאו מוכן! (${engineLabel}, ${job.duration || 5} שניות)`

@@ -101,12 +101,25 @@ async function submit_video({ prompt, duration = 5, engine = 'auto' }) {
     }
   }
 
-  // Replicate fallback (CogVideoX-5B — fast, good quality)
-  if (!process.env.REPLICATE_API_KEY) throw new Error('All video engines failed');
-  const repRes = await fetch('https://api.replicate.com/v1/models/pinokiofactory/cogvideox-5b/predictions', {
+  // fal.ai fallback (Kling 1.6 — fast, high quality)
+  if (process.env.FAL_API_KEY) {
+    try {
+      const falRes = await fetch('https://queue.fal.run/fal-ai/kling-video/v1.6/standard/text-to-video', {
+        method: 'POST',
+        headers: { Authorization: `Key ${process.env.FAL_API_KEY}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt, duration: duration <= 5 ? '5' : '10', aspect_ratio: '16:9' })
+      });
+      const falData = await falRes.json();
+      if (falData.request_id) return { task_id: falData.request_id, status: 'submitted', duration, engine: 'fal_kling' };
+    } catch (e) { console.log('fal.ai failed:', e.message); }
+  }
+
+  // Replicate fallback (lucataco/animate-diff)
+  if (!process.env.REPLICATE_API_KEY) throw new Error('All video engines failed — add FAL_API_KEY');
+  const repRes = await fetch('https://api.replicate.com/v1/models/lucataco/animate-diff/predictions', {
     method: 'POST',
     headers: { Authorization: `Bearer ${process.env.REPLICATE_API_KEY}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ input: { prompt, num_inference_steps: 50, num_frames: duration <= 5 ? 49 : 97 } })
+    body: JSON.stringify({ input: { motion_module: 'mm_sd_v15_v2', prompt, n_prompt: 'blur, low quality', num_frames: 16 } })
   });
   const repData = await repRes.json();
   if (!repData.id) throw new Error(repData.detail || 'Replicate failed');
