@@ -8,10 +8,11 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "latest",
-    "grammy": "latest",
-    "together-ai": "latest",
     "@google/generative-ai": "latest",
+    "dotenv": "latest",
     "express": "latest",
-    "dotenv": "latest"
+    "grammy": "latest",
+    "lumaai": "^1.19.1",
+    "together-ai": "latest"
   }
 }

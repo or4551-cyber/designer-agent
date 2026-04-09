@@ -67,42 +67,80 @@ async function generate_image({ prompt, model = 'dalle3' }) {
   return { url, model: 'DALL-E 3' };
 }
 
-// ── submit_video (Runway text-to-video) ────────────────────────────────────────
-async function submit_video({ prompt, duration = 5 }) {
-  const r = await fetch('https://api.dev.runwayml.com/v1/text_to_video', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${process.env.RUNWAY_API_KEY}`,
-      'Content-Type': 'application/json',
-      'X-Runway-Version': '2024-11-06'
-    },
-    body: JSON.stringify({ model: 'gen4_turbo', promptText: prompt, ratio: '1280:720', duration })
+// ── submit_video (Runway text-to-video, with Luma fallback) ───────────────────
+async function submit_video({ prompt, duration = 5, engine = 'auto' }) {
+  // Try Runway first (unless luma explicitly requested)
+  if (engine !== 'luma') {
+    try {
+      const r = await fetch('https://api.dev.runwayml.com/v1/text_to_video', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${process.env.RUNWAY_API_KEY}`,
+          'Content-Type': 'application/json',
+          'X-Runway-Version': '2024-11-06'
+        },
+        body: JSON.stringify({ model: 'gen4_turbo', promptText: prompt, ratio: '1280:720', duration })
+      });
+      const d = await r.json();
+      if (d.id) return { task_id: d.id, status: 'submitted', duration, engine: 'runway' };
+      console.log('Runway failed:', d.message || JSON.stringify(d).substring(0, 100));
+    } catch (e) {
+      console.log('Runway error, falling back to Luma:', e.message);
+    }
+  }
+
+  // Luma AI fallback (or explicit request)
+  if (!process.env.LUMA_API_KEY) throw new Error('Runway failed and LUMA_API_KEY not set');
+  const { LumaAI } = require('lumaai');
+  const luma = new LumaAI({ authToken: process.env.LUMA_API_KEY });
+  const gen = await luma.generations.create({
+    prompt,
+    aspect_ratio: '16:9',
+    loop: false
   });
-  const d = await r.json();
-  if (!d.id) throw new Error(d.message || JSON.stringify(d).substring(0, 100));
-  return { task_id: d.id, status: 'submitted', duration };
+  if (!gen.id) throw new Error('Luma AI failed: no generation id');
+  return { task_id: gen.id, status: 'submitted', duration, engine: 'luma' };
 }
 
-// ── submit_image_to_video (Runway image-to-video) ──────────────────────────────
-async function submit_image_to_video({ image_url, prompt, duration = 5 }) {
-  const r = await fetch('https://api.dev.runwayml.com/v1/image_to_video', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${process.env.RUNWAY_API_KEY}`,
-      'Content-Type': 'application/json',
-      'X-Runway-Version': '2024-11-06'
-    },
-    body: JSON.stringify({
-      model: 'gen4_turbo',
-      promptImage: image_url,
-      promptText: prompt || '',
-      ratio: '1280:720',
-      duration
-    })
+// ── submit_image_to_video (Runway, with Luma fallback) ────────────────────────
+async function submit_image_to_video({ image_url, prompt, duration = 5, engine = 'auto' }) {
+  // Try Runway first
+  if (engine !== 'luma') {
+    try {
+      const r = await fetch('https://api.dev.runwayml.com/v1/image_to_video', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${process.env.RUNWAY_API_KEY}`,
+          'Content-Type': 'application/json',
+          'X-Runway-Version': '2024-11-06'
+        },
+        body: JSON.stringify({
+          model: 'gen4_turbo',
+          promptImage: image_url,
+          promptText: prompt || '',
+          ratio: '1280:720',
+          duration
+        })
+      });
+      const d = await r.json();
+      if (d.id) return { task_id: d.id, status: 'submitted', duration, engine: 'runway' };
+      console.log('Runway i2v failed:', d.message || JSON.stringify(d).substring(0, 100));
+    } catch (e) {
+      console.log('Runway i2v error, falling back to Luma:', e.message);
+    }
+  }
+
+  // Luma AI fallback
+  if (!process.env.LUMA_API_KEY) throw new Error('Runway failed and LUMA_API_KEY not set');
+  const { LumaAI } = require('lumaai');
+  const luma = new LumaAI({ authToken: process.env.LUMA_API_KEY });
+  const gen = await luma.generations.create({
+    prompt: prompt || 'animate this image with smooth natural motion',
+    keyframes: { frame0: { type: 'image', url: image_url } },
+    aspect_ratio: '16:9'
   });
-  const d = await r.json();
-  if (!d.id) throw new Error(d.message || JSON.stringify(d).substring(0, 100));
-  return { task_id: d.id, status: 'submitted', duration };
+  if (!gen.id) throw new Error('Luma AI i2v failed: no generation id');
+  return { task_id: gen.id, status: 'submitted', duration, engine: 'luma' };
 }
 
 // ── analyze_image (Gemini 2.5 Flash Vision) ────────────────────────────────────

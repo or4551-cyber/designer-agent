@@ -25,25 +25,27 @@ const TOOL_DEFS = [
   },
   {
     name: 'submit_video',
-    description: 'Submit a Runway Gen4 Turbo text-to-video job. Async — returns immediately with task_id. User notified when ready (3-5 min).',
+    description: 'Submit a text-to-video job. Tries Runway Gen4 Turbo first, falls back to Luma AI automatically. Async — user notified when ready (3-5 min).',
     input_schema: {
       type: 'object',
       properties: {
         prompt: { type: 'string', description: 'Cinematic video generation prompt in English' },
-        duration: { type: 'number', enum: [5, 10], description: 'Video duration in seconds' }
+        duration: { type: 'number', enum: [5, 10], description: 'Video duration in seconds' },
+        engine: { type: 'string', enum: ['auto', 'runway', 'luma'], description: 'auto=try runway then luma, runway=force runway, luma=force luma' }
       },
       required: ['prompt']
     }
   },
   {
     name: 'submit_image_to_video',
-    description: 'Animate an existing image into a video using Runway Gen4 Turbo. Async — returns task_id.',
+    description: 'Animate an image into a video. Tries Runway first, falls back to Luma AI. Async — returns task_id.',
     input_schema: {
       type: 'object',
       properties: {
         image_url: { type: 'string', description: 'URL of the image to animate' },
         prompt: { type: 'string', description: 'Motion/animation instructions in English' },
-        duration: { type: 'number', enum: [5, 10], description: 'Video duration in seconds' }
+        duration: { type: 'number', enum: [5, 10], description: 'Video duration in seconds' },
+        engine: { type: 'string', enum: ['auto', 'runway', 'luma'], description: 'auto=try runway then luma' }
       },
       required: ['image_url']
     }
@@ -340,31 +342,52 @@ async function handleMessage(msg) {
   }
 }
 
-// ── Runway Poller (every 30 seconds) ──────────────────────────────────────────
+// ── Video Poller (Runway + Luma, every 30 seconds) ────────────────────────────
 setInterval(async () => {
   if (activeJobs.size === 0) return;
   for (const [task_id, job] of activeJobs) {
     try {
-      const r = await fetch(`https://api.dev.runwayml.com/v1/tasks/${task_id}`, {
-        headers: { Authorization: `Bearer ${process.env.RUNWAY_API_KEY}`, 'X-Runway-Version': '2024-11-06' }
-      });
-      const status = await r.json();
+      let videoUrl = null;
+      let failed = false;
 
-      if (status.status === 'SUCCEEDED' && status.output?.[0]) {
+      if (job.engine === 'luma') {
+        // ── Luma AI polling ──
+        const { LumaAI } = require('lumaai');
+        const luma = new LumaAI({ authToken: process.env.LUMA_API_KEY });
+        const gen = await luma.generations.get(task_id);
+        if (gen.state === 'completed' && gen.assets?.video) {
+          videoUrl = gen.assets.video;
+        } else if (gen.state === 'failed') {
+          failed = true;
+        }
+      } else {
+        // ── Runway polling ──
+        const r = await fetch(`https://api.dev.runwayml.com/v1/tasks/${task_id}`, {
+          headers: { Authorization: `Bearer ${process.env.RUNWAY_API_KEY}`, 'X-Runway-Version': '2024-11-06' }
+        });
+        const status = await r.json();
+        if (status.status === 'SUCCEEDED' && status.output?.[0]) {
+          videoUrl = status.output[0];
+        } else if (status.status === 'FAILED') {
+          failed = true;
+        }
+      }
+
+      if (videoUrl) {
+        const engineLabel = job.engine === 'luma' ? 'Luma AI' : 'Runway';
         try {
-          await bot.api.sendDocument(job.chat_id, status.output[0], {
-            caption: `🎬 הוידאו שלך מוכן! (${job.duration || 5} שניות)`
+          await bot.api.sendDocument(job.chat_id, videoUrl, {
+            caption: `🎬 הוידאו מוכן! (${engineLabel}, ${job.duration || 5} שניות)`
           });
         } catch {
-          await bot.api.sendMessage(job.chat_id, `🎬 הוידאו מוכן:\n${status.output[0]}`);
+          await bot.api.sendMessage(job.chat_id, `🎬 הוידאו מוכן:\n${videoUrl}`);
         }
         activeJobs.delete(task_id);
-        console.log(`Video delivered: ${task_id}`);
-
-      } else if (status.status === 'FAILED') {
+        console.log(`Video delivered [${job.engine}]: ${task_id}`);
+      } else if (failed) {
         await bot.api.sendMessage(job.chat_id, '⚠️ יצירת הוידאו נכשלה. רוצה לנסות שוב?');
         activeJobs.delete(task_id);
-        console.log(`Video failed: ${task_id}`);
+        console.log(`Video failed [${job.engine}]: ${task_id}`);
       }
     } catch (e) {
       console.error(`Poller error ${task_id}:`, e.message);
