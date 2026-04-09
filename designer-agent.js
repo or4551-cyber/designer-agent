@@ -87,38 +87,34 @@ CAPABILITIES SUMMARY (tell users when relevant):
 💬 זיכרון שיחה: זוכר את כל ההיסטוריה שלנו`;
 
 // ── Message handler ────────────────────────────────────────────────────────────
-bot.on('message', async (ctx) => {
-  const chatId = ctx.chat.id;
+const processedUpdates = new Set(); // deduplicate Telegram retries
+
+async function handleMessage(msg) {
+  const chatId = msg.chat.id;
   const history = sessions.get(chatId) || [];
 
   // Build user message content
   const userContent = [];
 
-  if (ctx.message.text) {
-    userContent.push({ type: 'text', text: ctx.message.text });
+  if (msg.text) {
+    userContent.push({ type: 'text', text: msg.text });
   }
 
-  if (ctx.message.photo) {
+  if (msg.photo) {
     try {
-      const photo = ctx.message.photo[ctx.message.photo.length - 1]; // largest size
-      const file = await ctx.api.getFile(photo.file_id);
+      const photo = msg.photo[msg.photo.length - 1];
+      const file = await bot.api.getFile(photo.file_id);
       const fileUrl = `https://api.telegram.org/file/bot${process.env.TG_TOKEN}/${file.file_path}`;
-      // Fetch and embed as base64 for Claude
       const imgRes = await fetch(fileUrl);
       const buf = await imgRes.arrayBuffer();
       const base64 = Buffer.from(buf).toString('base64');
-      const mimeType = 'image/jpeg';
       userContent.push({
         type: 'image',
-        source: { type: 'base64', media_type: mimeType, data: base64 }
+        source: { type: 'base64', media_type: 'image/jpeg', data: base64 }
       });
-      if (ctx.message.caption) {
-        userContent.push({ type: 'text', text: ctx.message.caption });
-      } else {
-        userContent.push({ type: 'text', text: 'מה תוכל לעשות עם התמונה הזו?' });
-      }
+      userContent.push({ type: 'text', text: msg.caption || 'מה תוכל לעשות עם התמונה הזו?' });
     } catch (e) {
-      userContent.push({ type: 'text', text: ctx.message.caption || 'שלחתי תמונה' });
+      userContent.push({ type: 'text', text: msg.caption || 'שלחתי תמונה' });
     }
   }
 
@@ -127,7 +123,7 @@ bot.on('message', async (ctx) => {
   history.push({ role: 'user', content: userContent });
 
   // Typing indicator
-  await ctx.replyWithChatAction('typing').catch(() => {});
+  await bot.api.sendChatAction(chatId, 'typing').catch(() => {});
 
   try {
     // ── Claude agentic loop ────────────────────────────────────────────────────
@@ -150,23 +146,21 @@ bot.on('message', async (ctx) => {
 
         let toolResult;
         try {
-          await ctx.replyWithChatAction('typing').catch(() => {});
+          await bot.api.sendChatAction(chatId, 'typing').catch(() => {});
           const result = await tools[block.name](block.input);
 
-          // Handle result side-effects
           if (block.name === 'generate_image' && result.url) {
             try {
-              await ctx.replyWithPhoto(result.url, { caption: `✨ ${result.model}` });
+              await bot.api.sendPhoto(chatId, result.url, { caption: `✨ ${result.model}` });
             } catch (e) {
-              // If direct URL fails, try sending as file
               try {
                 const imgData = await fetch(result.url);
                 const buf = await imgData.arrayBuffer();
-                await ctx.replyWithPhoto(new InputFile(Buffer.from(buf), 'image.jpg'), {
+                await bot.api.sendPhoto(chatId, new InputFile(Buffer.from(buf), 'image.jpg'), {
                   caption: `✨ ${result.model}`
                 });
               } catch (e2) {
-                await ctx.reply(`תמונה נוצרה: ${result.url}`);
+                await bot.api.sendMessage(chatId, `תמונה נוצרה: ${result.url}`);
               }
             }
           }
@@ -206,19 +200,17 @@ bot.on('message', async (ctx) => {
     // Send final text response
     const textBlock = response.content.find(b => b.type === 'text');
     if (textBlock && textBlock.text.trim()) {
-      await ctx.reply(textBlock.text);
+      await bot.api.sendMessage(chatId, textBlock.text);
     }
 
     history.push({ role: 'assistant', content: response.content });
-
-    // Keep last 40 messages
     sessions.set(chatId, history.slice(-40));
 
   } catch (e) {
     console.error('Handler error:', e.message);
-    await ctx.reply('אירעה שגיאה. נסה שוב עוד רגע.').catch(() => {});
+    await bot.api.sendMessage(chatId, 'אירעה שגיאה. נסה שוב עוד רגע.').catch(() => {});
   }
-});
+}
 
 // ── Runway Poller (every 30 seconds) ──────────────────────────────────────────
 setInterval(async () => {
@@ -264,7 +256,18 @@ app.use(express.json());
 
 app.get('/health', (req, res) => res.json({ status: 'ok', jobs: activeJobs.size }));
 
-app.use('/webhook', webhookCallback(bot, 'express'));
+app.post('/webhook', (req, res) => {
+  res.sendStatus(200); // Answer Telegram immediately — no timeout issues
+  const update = req.body;
+  if (!update.message) return;
+  if (processedUpdates.has(update.update_id)) return; // ignore retries
+  processedUpdates.add(update.update_id);
+  if (processedUpdates.size > 1000) {
+    const first = processedUpdates.values().next().value;
+    processedUpdates.delete(first);
+  }
+  handleMessage(update.message).catch(console.error);
+});
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
