@@ -1,0 +1,17 @@
+{
+  "name": "designer-agent",
+  "version": "1.0.0",
+  "description": "The Designer — Claude AI Telegram Bot",
+  "main": "designer-agent.js",
+  "scripts": {
+    "start": "node designer-agent.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "latest",
+    "grammy": "latest",
+    "together-ai": "latest",
+    "@google/generative-ai": "latest",
+    "express": "latest",
+    "dotenv": "latest"
+  }
+}
