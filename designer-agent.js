@@ -104,6 +104,8 @@ generate_image:
 
 submit_video:
 - Call IMMEDIATELY for any video request. Never ask questions first.
+- CRITICAL: prompt MUST be in English only — no Hebrew, no special characters. Translate user's request yourself.
+- Good prompt example: "Slow cinematic shot of ocean waves crashing on shore at golden sunset, foam on sand, warm light"
 - After submitting: "שלחתי ל-Runway — אודיע כשהוידאו מוכן (3-5 דקות) 🎬"
 - duration=10 for cinematic shots, duration=5 for quick clips
 

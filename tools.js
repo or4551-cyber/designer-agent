@@ -67,8 +67,14 @@ async function generate_image({ prompt, model = 'dalle3' }) {
   return { url, model: 'DALL-E 3' };
 }
 
-// ── submit_video (Runway text-to-video, with Luma fallback) ───────────────────
+// ── submit_video (Runway text-to-video, with fallbacks) ──────────────────────
 async function submit_video({ prompt, duration = 5, engine = 'auto' }) {
+  // Ensure prompt is clean English — Runway rejects non-English or flagged content
+  const safePrompt = prompt
+    .replace(/[^\x00-\x7F]/g, '') // strip non-ASCII (Hebrew etc)
+    .trim()
+    .substring(0, 500) || 'cinematic nature scene, smooth camera movement';
+
   // Try Runway first (unless luma explicitly requested)
   if (engine !== 'luma') {
     try {
@@ -79,7 +85,7 @@ async function submit_video({ prompt, duration = 5, engine = 'auto' }) {
           'Content-Type': 'application/json',
           'X-Runway-Version': '2024-11-06'
         },
-        body: JSON.stringify({ model: 'gen4_turbo', promptText: prompt, ratio: '1280:720', duration })
+        body: JSON.stringify({ model: 'gen4_turbo', promptText: safePrompt, ratio: '1280:720', duration })
       });
       const d = await r.json();
       if (d.id) return { task_id: d.id, status: 'submitted', duration, engine: 'runway' };
