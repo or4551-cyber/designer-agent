@@ -242,12 +242,11 @@ setInterval(async () => {
 
       if (status.status === 'SUCCEEDED' && status.output && status.output[0]) {
         try {
-          await bot.api.sendVideo(job.chat_id, status.output[0], {
+          await bot.api.sendDocument(job.chat_id, status.output[0], {
             caption: `🎬 הוידאו שלך מוכן! (${job.duration || 5} שניות)`
           });
         } catch (e) {
-          // If sendVideo fails, send as document or link
-          await bot.api.sendMessage(job.chat_id, `🎬 הוידאו מוכן: ${status.output[0]}`);
+          await bot.api.sendMessage(job.chat_id, `🎬 הוידאו מוכן — לחץ להורדה:\n${status.output[0]}`);
         }
         activeJobs.delete(task_id);
         console.log(`Video delivered for task ${task_id}`);
