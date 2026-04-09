@@ -374,6 +374,17 @@ setInterval(async () => {
         } else if (gen.state === 'failed') {
           failed = true;
         }
+      } else if (job.engine === 'replicate') {
+        // ── Replicate polling ──
+        const r = await fetch(`https://api.replicate.com/v1/predictions/${task_id}`, {
+          headers: { Authorization: `Bearer ${process.env.REPLICATE_API_KEY}` }
+        });
+        const pred = await r.json();
+        if (pred.status === 'succeeded' && pred.output) {
+          videoUrl = Array.isArray(pred.output) ? pred.output[0] : pred.output;
+        } else if (pred.status === 'failed' || pred.status === 'canceled') {
+          failed = true;
+        }
       } else {
         // ── Runway polling ──
         const r = await fetch(`https://api.dev.runwayml.com/v1/tasks/${task_id}`, {
@@ -388,7 +399,7 @@ setInterval(async () => {
       }
 
       if (videoUrl) {
-        const engineLabel = job.engine === 'luma' ? 'Luma AI' : 'Runway';
+        const engineLabel = job.engine === 'luma' ? 'Luma AI' : job.engine === 'replicate' ? 'Replicate' : 'Runway';
         try {
           await bot.api.sendDocument(job.chat_id, videoUrl, {
             caption: `🎬 הוידאו מוכן! (${engineLabel}, ${job.duration || 5} שניות)`

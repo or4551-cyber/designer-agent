@@ -89,17 +89,28 @@ async function submit_video({ prompt, duration = 5, engine = 'auto' }) {
     }
   }
 
-  // Luma AI fallback (or explicit request)
-  if (!process.env.LUMA_API_KEY) throw new Error('Runway failed and LUMA_API_KEY not set');
-  const { LumaAI } = require('lumaai');
-  const luma = new LumaAI({ authToken: process.env.LUMA_API_KEY });
-  const gen = await luma.generations.create({
-    prompt,
-    aspect_ratio: '16:9',
-    loop: false
+  // Luma AI fallback
+  if (process.env.LUMA_API_KEY) {
+    try {
+      const { LumaAI } = require('lumaai');
+      const luma = new LumaAI({ authToken: process.env.LUMA_API_KEY });
+      const gen = await luma.generations.create({ prompt, aspect_ratio: '16:9', loop: false });
+      if (gen.id) return { task_id: gen.id, status: 'submitted', duration, engine: 'luma' };
+    } catch (e) {
+      console.log('Luma failed, trying Replicate:', e.message);
+    }
+  }
+
+  // Replicate fallback (minimax/video-01)
+  if (!process.env.REPLICATE_API_KEY) throw new Error('All video engines failed');
+  const repRes = await fetch('https://api.replicate.com/v1/models/minimax/video-01/predictions', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${process.env.REPLICATE_API_KEY}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ input: { prompt, duration: Math.min(duration, 6) } })
   });
-  if (!gen.id) throw new Error('Luma AI failed: no generation id');
-  return { task_id: gen.id, status: 'submitted', duration, engine: 'luma' };
+  const repData = await repRes.json();
+  if (!repData.id) throw new Error(repData.detail || 'Replicate failed');
+  return { task_id: repData.id, status: 'submitted', duration, engine: 'replicate' };
 }
 
 // ── submit_image_to_video (Runway, with Luma fallback) ────────────────────────
@@ -131,16 +142,31 @@ async function submit_image_to_video({ image_url, prompt, duration = 5, engine =
   }
 
   // Luma AI fallback
-  if (!process.env.LUMA_API_KEY) throw new Error('Runway failed and LUMA_API_KEY not set');
-  const { LumaAI } = require('lumaai');
-  const luma = new LumaAI({ authToken: process.env.LUMA_API_KEY });
-  const gen = await luma.generations.create({
-    prompt: prompt || 'animate this image with smooth natural motion',
-    keyframes: { frame0: { type: 'image', url: image_url } },
-    aspect_ratio: '16:9'
+  if (process.env.LUMA_API_KEY) {
+    try {
+      const { LumaAI } = require('lumaai');
+      const luma = new LumaAI({ authToken: process.env.LUMA_API_KEY });
+      const gen = await luma.generations.create({
+        prompt: prompt || 'animate this image with smooth natural motion',
+        keyframes: { frame0: { type: 'image', url: image_url } },
+        aspect_ratio: '16:9'
+      });
+      if (gen.id) return { task_id: gen.id, status: 'submitted', duration, engine: 'luma' };
+    } catch (e) {
+      console.log('Luma i2v failed, trying Replicate:', e.message);
+    }
+  }
+
+  // Replicate fallback
+  if (!process.env.REPLICATE_API_KEY) throw new Error('All video engines failed');
+  const repRes = await fetch('https://api.replicate.com/v1/models/minimax/video-01/predictions', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${process.env.REPLICATE_API_KEY}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ input: { prompt: prompt || 'animate this image', first_frame_image: image_url } })
   });
-  if (!gen.id) throw new Error('Luma AI i2v failed: no generation id');
-  return { task_id: gen.id, status: 'submitted', duration, engine: 'luma' };
+  const repData = await repRes.json();
+  if (!repData.id) throw new Error(repData.detail || 'Replicate i2v failed');
+  return { task_id: repData.id, status: 'submitted', duration, engine: 'replicate' };
 }
 
 // ── analyze_image (Gemini 2.5 Flash Vision) ────────────────────────────────────
