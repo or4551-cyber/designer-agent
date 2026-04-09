@@ -143,13 +143,14 @@ async function handleMessage(msg) {
   // Typing indicator
   await bot.api.sendChatAction(chatId, 'typing').catch(() => {});
 
-  async function claudeCreate(params, retries = 3) {
+  async function claudeCreate(params, retries = 5) {
     for (let i = 0; i < retries; i++) {
       try {
         return await client.messages.create(params);
       } catch (e) {
-        if (i < retries - 1 && (e.status === 529 || e.status === 503 || e.status === 529)) {
-          await new Promise(r => setTimeout(r, (i + 1) * 3000));
+        if (i < retries - 1 && (e.status === 529 || e.status === 503 || e.status === 500)) {
+          const wait = (i + 1) * 8000; // 8s, 16s, 24s, 32s
+          await new Promise(r => setTimeout(r, wait));
           continue;
         }
         throw e;
