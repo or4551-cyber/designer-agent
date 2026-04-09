@@ -101,12 +101,12 @@ async function submit_video({ prompt, duration = 5, engine = 'auto' }) {
     }
   }
 
-  // Replicate fallback (WAN 2.1 720p — high quality MP4)
+  // Replicate fallback (CogVideoX-5B — fast, good quality)
   if (!process.env.REPLICATE_API_KEY) throw new Error('All video engines failed');
-  const repRes = await fetch('https://api.replicate.com/v1/models/wavespeedai/wan-2.1-t2v-720p/predictions', {
+  const repRes = await fetch('https://api.replicate.com/v1/models/pinokiofactory/cogvideox-5b/predictions', {
     method: 'POST',
     headers: { Authorization: `Bearer ${process.env.REPLICATE_API_KEY}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ input: { prompt, num_frames: duration <= 5 ? 81 : 121, guidance_scale: 6 } })
+    body: JSON.stringify({ input: { prompt, num_inference_steps: 50, num_frames: duration <= 5 ? 49 : 97 } })
   });
   const repData = await repRes.json();
   if (!repData.id) throw new Error(repData.detail || 'Replicate failed');
