@@ -104,14 +104,13 @@ async function submit_video({ prompt, duration = 5, engine = 'auto' }) {
   // fal.ai fallback (Kling 1.6 — fast, high quality)
   if (process.env.FAL_API_KEY) {
     try {
-      const falRes = await fetch('https://queue.fal.run/fal-ai/kling-video/v1.6/standard/text-to-video', {
-        method: 'POST',
-        headers: { Authorization: `Key ${process.env.FAL_API_KEY}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt, duration: duration <= 5 ? '5' : '10', aspect_ratio: '16:9' })
+      const { fal } = require('@fal-ai/client');
+      fal.config({ credentials: process.env.FAL_API_KEY });
+      const result = await fal.queue.submit('fal-ai/kling-video/v1.6/standard/text-to-video', {
+        input: { prompt, duration: String(duration <= 5 ? 5 : 10), aspect_ratio: '16:9' }
       });
-      const falData = await falRes.json();
-      if (falData.request_id) return { task_id: falData.request_id, status: 'submitted', duration, engine: 'fal_kling' };
-    } catch (e) { console.log('fal.ai failed:', e.message); }
+      if (result.request_id) return { task_id: result.request_id, status: 'submitted', duration, engine: 'fal_kling' };
+    } catch (e) { console.log('fal.ai submit failed:', e.message); }
   }
 
   // Replicate fallback (lucataco/animate-diff)

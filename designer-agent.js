@@ -378,13 +378,15 @@ setInterval(async () => {
         }
       } else if (job.engine === 'fal_kling') {
         // ── fal.ai Kling polling ──
-        const falRes = await fetch(`https://queue.fal.run/fal-ai/kling-video/v1.6/standard/text-to-video/requests/${task_id}`, {
-          headers: { Authorization: `Key ${process.env.FAL_API_KEY}` }
+        const { fal } = require('@fal-ai/client');
+        fal.config({ credentials: process.env.FAL_API_KEY });
+        const falStatus = await fal.queue.status('fal-ai/kling-video/v1.6/standard/text-to-video', {
+          requestId: task_id, logs: false
         });
-        const falData = await falRes.json();
-        if (falData.status === 'COMPLETED' && falData.video?.url) {
-          videoUrl = falData.video.url;
-        } else if (falData.status === 'FAILED') {
+        if (falStatus.status === 'COMPLETED') {
+          const falResult = await fal.queue.result('fal-ai/kling-video/v1.6/standard/text-to-video', { requestId: task_id });
+          videoUrl = falResult.data?.video?.url;
+        } else if (falStatus.status === 'FAILED') {
           failed = true;
         }
       } else if (job.engine === 'replicate') {

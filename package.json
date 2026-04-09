@@ -8,6 +8,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "latest",
+    "@fal-ai/client": "^1.9.5",
     "@google/generative-ai": "latest",
     "dotenv": "latest",
     "express": "latest",
