@@ -99,4 +99,28 @@ async function analyze_image({ image_url, question }) {
   return { description: result.response.text() };
 }
 
-module.exports = { generate_image, submit_video, submit_image_to_video, analyze_image };
+// ── ElevenLabs TTS ────────────────────────────────────────────────────────────
+async function text_to_speech({ text, voice_id, language = 'he' }) {
+  // Default: multilingual voice that handles Hebrew well
+  const vid = voice_id || process.env.ELEVENLABS_VOICE_ID || 'pNInz6obpgDQGcFmaJgB'; // Adam
+  const r = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${vid}`, {
+    method: 'POST',
+    headers: {
+      'xi-api-key': process.env.ELEVENLABS_API_KEY,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      text,
+      model_id: 'eleven_multilingual_v2',
+      voice_settings: { stability: 0.5, similarity_boost: 0.75, style: 0.2, use_speaker_boost: true }
+    })
+  });
+  if (!r.ok) {
+    const err = await r.text();
+    throw new Error(`ElevenLabs failed ${r.status}: ${err.substring(0, 200)}`);
+  }
+  const buf = await r.arrayBuffer();
+  return { audio_base64: Buffer.from(buf).toString('base64'), format: 'mp3', chars: text.length };
+}
+
+module.exports = { generate_image, submit_video, submit_image_to_video, analyze_image, text_to_speech };

@@ -59,6 +59,18 @@ const TOOL_DEFS = [
       },
       required: ['image_url']
     }
+  },
+  {
+    name: 'text_to_speech',
+    description: 'Convert text to realistic spoken audio using ElevenLabs. Use for: reading content aloud, voice messages, narration, Hebrew/English TTS. Returns an audio file sent directly to the user.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        text: { type: 'string', description: 'The text to convert to speech (Hebrew or English)' },
+        voice_id: { type: 'string', description: 'Optional ElevenLabs voice ID. Leave empty for default.' }
+      },
+      required: ['text']
+    }
   }
 ];
 
@@ -80,9 +92,15 @@ CRITICAL RULES:
 - When you generate an image, the URL will be sent to the user automatically — no need to include it in your text.
 - For complex creative campaigns: think like a senior creative director. Understand the brand, the audience, the emotion before generating.
 
+TOOLS — text_to_speech:
+- Call when user asks to "read this aloud", "make a voice message", "speak this", "הקרא", "קול", "הקלטה", "הקראה"
+- Also use proactively: after generating a campaign tagline → offer to voice it. After a script → offer audio version.
+- Language auto-detected — eleven_multilingual_v2 handles Hebrew natively.
+
 CAPABILITIES SUMMARY (tell users when relevant):
 ✨ תמונות: DALL-E 3 (איכות גבוהה) + FLUX Schnell (מהיר)
-🎬 וידאו: Runway Gen4 Turbo — text-to-video ו-image-to-video
+🎬 וידאו: Runway Gen4 Turbo — text-to-video ו-image-to-video (5 או 10 שניות)
+🔊 קול: ElevenLabs — הקראת טקסט בעברית ובאנגלית, הודעות קוליות
 👁️ ניתוח תמונות: Gemini 2.5 Flash Vision
 💬 זיכרון שיחה: זוכר את כל ההיסטוריה שלנו`;
 
@@ -176,6 +194,15 @@ async function handleMessage(msg) {
               } catch (e2) {
                 await bot.api.sendMessage(chatId, `תמונה נוצרה: ${result.url}`);
               }
+            }
+          }
+
+          if (block.name === 'text_to_speech' && result.audio_base64) {
+            try {
+              const audioBuf = Buffer.from(result.audio_base64, 'base64');
+              await bot.api.sendVoice(chatId, new InputFile(audioBuf, 'voice.mp3'));
+            } catch (e) {
+              console.error('sendVoice error:', e.message);
             }
           }
 
