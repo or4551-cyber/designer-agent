@@ -309,7 +309,9 @@ async function handleMessage(msg) {
             activeJobs.set(result.task_id, {
               chat_id: chatId,
               description: block.input.prompt || 'וידאו',
-              duration: result.duration
+              duration: result.duration,
+              engine: result.engine || 'runway',
+              created_at: Date.now()
             });
           }
 
@@ -414,6 +416,12 @@ setInterval(async () => {
         activeJobs.delete(task_id);
         console.log(`Video failed [${job.engine}]: ${task_id}`);
       }
+      // Timeout: give up after 20 minutes
+      if (job.created_at && Date.now() - job.created_at > 20 * 60 * 1000) {
+        await bot.api.sendMessage(job.chat_id, '⏱️ יצירת הוידאו לקחה יותר מדי זמן. נסה שוב.').catch(() => {});
+        activeJobs.delete(task_id);
+        console.log(`Job timed out: ${task_id}`);
+      }
     } catch (e) {
       console.error(`Poller error ${task_id}:`, e.message);
     }
@@ -425,6 +433,20 @@ const app = express();
 app.use(express.json());
 
 app.get('/health', (req, res) => res.json({ status: 'ok', jobs: activeJobs.size, sessions: sessions.size }));
+
+app.get('/jobs', (req, res) => {
+  const jobs = [];
+  for (const [task_id, job] of activeJobs) {
+    jobs.push({ task_id, engine: job.engine, chat_id: job.chat_id, description: job.description, age_min: Math.round((Date.now() - job.created_at) / 60000) });
+  }
+  res.json(jobs);
+});
+
+app.post('/clearjobs', (req, res) => {
+  const count = activeJobs.size;
+  activeJobs.clear();
+  res.json({ cleared: count });
+});
 
 app.post('/webhook', (req, res) => {
   res.sendStatus(200);
