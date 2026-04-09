@@ -85,7 +85,7 @@ async function submit_video({ prompt, duration = 5, engine = 'auto' }) {
           'Content-Type': 'application/json',
           'X-Runway-Version': '2024-11-06'
         },
-        body: JSON.stringify({ model: 'gen4_turbo', promptText: safePrompt, ratio: '1280:720', duration })
+        body: JSON.stringify({ model: 'gen4.5', promptText: safePrompt, ratio: '1280:720', duration })
       });
       const d = await r.json();
       if (d.id) return { task_id: d.id, status: 'submitted', duration, engine: 'runway' };
